@@ -194,12 +194,9 @@ export class GLTFPlayer {
   // Playback animation loop
   update() {
     if (!this.isPlaying) return;
-    // If frameobject is not null, dispose of it
+
     if (!!this.frameObject) {
       this.frameObject.visible = false;
-      this.frameObject.geometry.dispose();
-      this.frameObject.material.map.dispose();
-      this.frameObject.material.dispose();
     }
 
     // Set to new frameobnject
