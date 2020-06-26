@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+  <title>Volumetric GLTF Player with handpose recognition</title>
+  <link type="text/css" rel="stylesheet" href="main.css" />
+  <style>
+    html, body {
+      overflow: hidden;
+      height: 100%;
+    }
+
+    #video {
+      z-index: 100;
+      height: 100%;
+      width: 100%;
+      object-fit: cover;
+    }
+    #threeCanvas {
+      z-index: 101;
+      position: absolute;
+      pointer-events: none;
+      top: 0;
+      left: 0;
+    }
+
+  </style>
+</head>
+<body>
+<script src="https://unpkg.com/three@0.117.1/build/three.js"></script>
+<script src="https://unpkg.com/three@0.117.1/examples/js/geometries/TeapotBufferGeometry.js"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose"></script>
+<script src="../dist/three-volumetric.js"></script>
+<script>
+  /* global describe handpose tf io THREE*/
+
+  var handposeModel = null; // this will be loaded with the handpose model
+
+  var videoDataLoaded = false; // is webcam capture ready?
+
+  var statusText = "Loading handpose model...";
+
+  var myHands = []; // hands detected
+                    // currently handpose only supports single hand, so this will be either empty or singleton
+
+  var handMeshes = []; // array of threejs objects that makes up the hand rendering
+
+  var dbgText = document.createElement("div")
+  dbgText.style.position="absolute";
+  dbgText.style.color = '#f00';
+  dbgText.style.backgroundColor = '#000';
+  dbgText.style.left = 0;
+  dbgText.style.bottom = 0;
+  document.body.appendChild(dbgText);
+
+  // boilerplate to initialize threejs scene
+  var scene = new THREE.Scene();
+  window.camera = new THREE.PerspectiveCamera( 90, window.innerWidth / window.innerHeight, 0.1, 1000 );
+  var renderer = new THREE.WebGLRenderer({ alpha: true });
+  renderer.setSize( window.innerWidth, window.innerHeight );
+  document.body.appendChild( renderer.domElement );
+  renderer.domElement.id = 'threeCanvas';
+
+  camera.position.z = window.innerWidth/2; // rough estimate for suitable camera distance based on FOV
+
+  window.addEventListener('resize', function(event) {
+    renderer.setSize( window.innerWidth, window.innerHeight );
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+
+    if (capture && capture.videoHeight) {
+      camera.position.z = capture.videoHeight / 2; // rough estimate for suitable camera distance based on FOV
+    }
+  })
+
+  window.scene = scene
+
+
+  // read video from webcam
+  var capture = document.createElement("video");
+  capture.id = 'video'
+  capture.playsinline="playsinline"
+  capture.autoplay="autoplay"
+  capture.muted = "muted"
+  navigator.mediaDevices.getUserMedia({audio:false,video:true}).then(function(stream){
+    window.stream = stream;
+    capture.srcObject = stream;
+  }).catch(function(){
+    capture.controls = "controls"
+    capture.loop = "loop"
+    capture.src = "20200619_hadpose_tests.mp4";
+  })
+  document.body.appendChild(capture);
+
+  // signal when capture is ready and set size for debug canvas
+  capture.onloadeddata = function(){
+    console.log("video initialized");
+    videoDataLoaded = true;
+
+    camera.position.z = capture.videoHeight/2; // rough estimate for suitable camera distance based on FOV
+  }
+
+
+  // certian materials require a light source, which you can add here:
+  // var directionalLight = new THREE.DirectionalLight( 0xffffff, 1.0 );
+  // scene.add( directionalLight );
+
+
+  for (var i = 0; i < 21; i++){ // 21 keypoints
+    var {isPalm,next} = getLandmarkProperty(i);
+
+    var obj = new THREE.Object3D(); // a parent object to facilitate rotation/scaling
+
+    // we make each bone a cylindrical shape, but you can use your own models here too
+    var geometry = new THREE.CylinderGeometry( isPalm?5:10, 5, 1);
+
+    var material = new THREE.MeshNormalMaterial();
+    // another possible material (after adding a light source):
+    // var material = new THREE.MeshPhongMaterial({color:0x00ffff});
+
+    var mesh = new THREE.Mesh( geometry, material );
+    mesh.rotation.x = Math.PI/2;
+
+    obj.add( mesh );
+    scene.add(obj);
+    handMeshes.push(obj);
+  }
+
+  const palmObject = new THREE.Group();
+  // const teapotMesh = new THREE.Mesh(
+  //   new THREE.TeapotBufferGeometry(40),
+  //   new THREE.MeshNormalMaterial()
+  // );
+  // teapotMesh.position.y = 10;
+  // teapotMesh.rotation.y = -Math.PI / 2;
+  // palmObject.add(teapotMesh)
+
+
+  scene.add(new THREE.AmbientLight(0xffffff, 1))
+
+  const playerContainer = new THREE.Group()
+  playerContainer.rotation.x = -Math.PI / 2
+  palmObject.add(playerContainer)
+
+  const player = new GLTFPlayer(
+    playerContainer, // scene: any,
+    'optimized_howie_v2.glb', // file: string,
+    //'single_howie_optimized.glb', // file: string,
+    () => { console.log('Player loaded') }, // onLoaded: any,
+    70, // startScale: number = 1,
+    { x: 0, y: 0, z: 0 }, // startPosition: { x: any; y: any; z: any } = { x: 0, y: 0, z: 0 },
+    true, // castShadow: boolean = true,
+    true, // playOnStart: boolean = true,
+    true, // showFirstFrameOnStart: boolean = true,
+    true, // loop: boolean = true,
+    2, // startFrame: number = 0,
+    // endFrame: number = -1,
+    // frameRate: number = 60,
+    // speedMultiplier: number = 1
+  )
+
+  scene.add(palmObject)
+
+  // update threejs object position and orientation from the detected hand pose
+  // threejs has a "scene" model, so we don't have to specify what to draw each frame,
+  // instead we put objects at right positions and threejs renders them all
+  function updateMeshes(hand){
+    const handLandmarks = hand.landmarks.map(point => webcam2space(...point))
+
+    for (var i = 0; i < handMeshes.length; i++){
+
+      var {isPalm,next} = getLandmarkProperty(i);
+
+      var p0 = handLandmarks[i   ];  // one end of the bone
+      var p1 = handLandmarks[next];  // the other end of the bone
+
+      // compute the center of the bone (midpoint)
+      var mid = p0.clone().lerp(p1,0.5);
+      handMeshes[i].position.set(mid.x,mid.y,mid.z);
+
+      // compute the length of the bone
+      handMeshes[i].scale.z = p0.distanceTo(p1);
+
+      // compute orientation of the bone
+      handMeshes[i].lookAt(p1);
+
+    }
+
+    syncPalmPlaneRotation(palmObject, handLandmarks)
+  }
+
+
+  // Load the MediaPipe handpose model assets.
+  handpose.load().then(function(_model){
+    console.log("model initialized.")
+    statusText = "Model loaded."
+    handposeModel = _model;
+  })
+
+
+  // compute some metadata given a landmark index
+  // - is the landmark a palm keypoint or a finger keypoint?
+  // - what's the next landmark to connect to if we're drawing a bone?
+  function getLandmarkProperty(i){
+    var palms = [0,1,2,5,9,13,17] //landmark indices that represent the palm
+
+    var idx = palms.indexOf(i);
+    var isPalm = idx != -1;
+    var next; // who to connect with?
+    if (!isPalm){ // connect with previous finger landmark if it's a finger landmark
+      next = i-1;
+    }else{ // connect with next palm landmark if it's a palm landmark
+      next = palms[(idx+1)%palms.length];
+    }
+    return {isPalm,next};
+  }
+
+  // transform webcam coordinates to threejs 3d coordinates
+  function webcam2space(x,y,z){
+    return new THREE.Vector3(
+      (x-capture.videoWidth /2),
+      -(y-capture.videoHeight/2), // in threejs, +y is up
+      - z
+    )
+  }
+
+  function render() {
+    requestAnimationFrame(render); // this creates an infinite animation loop
+
+    if (handposeModel && videoDataLoaded && !capture.seeking){ // model and video both loaded
+
+      handposeModel.estimateHands(capture).then(function(_hands){
+        // we're handling an async promise
+        // best to avoid drawing something here! it might produce weird results due to racing
+
+        myHands = _hands; // update the global myHands object with the detected hands
+        if (!myHands.length){
+          // haven't found any hands
+          statusText = "Show some hands!"
+          scene.visible = false
+        }else{
+          scene.visible = true
+          // display the confidence, to 3 decimal places
+          statusText = "Confidence: "+ (Math.round(myHands[0].handInViewConfidence*1000)/1000);
+
+          // update 3d objects
+          updateMeshes(myHands[0]);
+        }
+      })
+    } else {
+      scene.visible = false
+    }
+
+    dbgText.innerText = statusText
+
+    // render the 3D scene!
+    renderer.render( scene, camera );
+  }
+
+  const axisY = new THREE.Vector3(0, 1, 0);
+  const axisZ = new THREE.Vector3(0, 0, 1);
+  const p = new THREE.Plane();
+  function syncPalmPlaneRotation(object, handLandmarks) {
+    const p0 = handLandmarks[0]; // wrist to palm point
+    const p1 = handLandmarks[5]; // index finger start
+    const p2 = handLandmarks[17]; // pinkie finger start
+
+    p.setFromCoplanarPoints(p0, p1, p2)
+    if (p.normal.dot(camera.position) < 0) {
+      p.normal.negate()
+    }
+
+    let p1p2mid = p1.clone().lerp(p2, 0.5)
+    let pos = p0.clone().lerp(p1p2mid, 0.5)
+
+    object.position.copy(pos);
+
+    let q = object.quaternion;
+    q.setFromUnitVectors(
+      axisY,
+      p.normal
+    );
+
+    const p1p2Perpendicular = p1.clone().sub(p2.clone());
+
+    const d = p1p2Perpendicular.normalize().dot(pos.clone().sub(p2));
+    p1p2Perpendicular.setLength(d).add(p2);
+
+    const rotatedZaxis = axisZ.clone().applyQuaternion(q);
+    const projectedZaxis = new THREE.Vector3()
+    p.projectPoint( rotatedZaxis, projectedZaxis)
+    rotatedZaxis.copy(projectedZaxis).applyQuaternion(q.clone().inverse());
+
+    const p1p2PerpendicularVector = p1p2Perpendicular
+      .clone()
+      .sub(pos)
+      .normalize()
+      .applyQuaternion(q.clone().inverse());
+
+    const perpendicularAngle = Math.atan2(
+      p1p2PerpendicularVector.x,
+      p1p2PerpendicularVector.z
+    );
+    const rotatedZaxisAngle = Math.atan2(rotatedZaxis.x, rotatedZaxis.z);
+
+    const a = rotatedZaxisAngle - perpendicularAngle;
+
+    let q2 = new THREE.Quaternion().setFromAxisAngle(axisY, -a);
+
+    q.multiply(q2);
+  }
+
+  render(); // kick off the rendering loop!
+</script>
+
+
+<script>
+  // draw the FPS
+  ;;;(function(){var script=document.createElement('script');script.onload=function(){var stats=new Stats();document.body.appendChild(stats.dom);requestAnimationFrame(function loop(){stats.update();requestAnimationFrame(loop)});};script.src='//mrdoob.github.io/stats.js/build/stats.min.js';document.head.appendChild(script);})()
+</script>
+</body>
+</html>
