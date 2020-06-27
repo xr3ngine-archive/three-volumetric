@@ -9,7 +9,6 @@ module.exports = {
     library: '$',
     libraryTarget: 'umd',
   },
-  externals: [ nodeExternals() ],
   module: {
     rules: [
       {
@@ -23,9 +22,10 @@ module.exports = {
     extensions: [ '.ts', '.js' ],
   },
   output: {
+    libraryTarget: 'window',
     filename: 'three-volumetric.js',
     path: path.resolve(__dirname, 'dist'),
   },
   mode: 'development',
-  devtool: 'sourceMap',
+  devtool: 'source-map',
 };

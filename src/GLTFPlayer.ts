@@ -7,6 +7,8 @@ export class GLTFPlayer {
   model: any;
   gltf: any;
 
+  frames: any[] = [];
+
   startFrame = 0;
   currentFrame = 0;
   endFrame = 0;
@@ -152,7 +154,13 @@ export class GLTFPlayer {
           startPosition.z
         );
 
-        this.model.children[startFrame].visible = showFirstFrameOnStart;
+        this.model.children.forEach((child:any) => {
+          const frameIndex = parseInt(child.name.split('_').pop());
+          this.frames[frameIndex] = child;
+        })
+
+        const currentFrameObject = this.getObjectByCurrentFrame(startFrame);
+        currentFrameObject.visible = showFirstFrameOnStart;
         this.currentFrame = startFrame;
         this.startFrame = startFrame;
 
@@ -173,9 +181,7 @@ export class GLTFPlayer {
   }
 
   getObjectByCurrentFrame(index: number) {
-    let name = "Frame_";
-    name = name.concat(this.padFrameNumberWithZeros(index, 4));
-    return this.scene.getObjectByName(name);
+    return this.frames[index];
   }
 
   padFrameNumberWithZeros(n: any, width: number) {
@@ -188,17 +194,16 @@ export class GLTFPlayer {
   // Playback animation loop
   update() {
     if (!this.isPlaying) return;
-    // If frameobject is not null, dispose of it
+
     if (!!this.frameObject) {
       this.frameObject.visible = false;
-      this.frameObject.geometry.dispose();
-      this.frameObject.material.map.dispose();
-      this.frameObject.material.dispose();
     }
 
     // Set to new frameobnject
     this.frameObject = this.getObjectByCurrentFrame(this.currentFrame++);
-    this.frameObject.visible = true;
+    if (!!this.frameObject) {
+      this.frameObject.visible = true;
+    }
 
     if (this.currentFrame >= this.endFrame) {
       if (this.loop) this.currentFrame = this.startFrame;

@@ -3,6 +3,7 @@
   "version": "0.0.4",
   "description": "Three.js Volumetric Player",
   "main": "dist/index.js",
+  "module": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
     "test": "echo \"Error: no tests installed\" && exit 1",
