@@ -95,7 +95,7 @@ var DracoFileCreator = /** @class */ (function () {
 
       var rawObjDataCRT = fs.readFileSync(this._meshFiles[i]);
       let rawCRTFrame = Buffer.from(rawObjDataCRT)
-      console.log(rawCRTFrame.byteLength,this._meshFiles[i],'rawCRTFrame');
+      // console.log(rawCRTFrame.byteLength,this._meshFiles[i],'rawCRTFrame');
 
 
 
@@ -249,7 +249,10 @@ var DracoFileCreator = /** @class */ (function () {
   };
   return DracoFileCreator;
 })();
-
-new DracoFileCreator('crt', 'png', 0, 99, 'CRT_sample_v35_99frames.drcs', function () {
+// bash to convert all ply/obj in a folder to crt first.
+// for file in *.ply
+// ../corto $file
+// end
+new DracoFileCreator('crt', 'png', 0, 99, 'CRT_fromPLY_sample_v35_99frames.drcs', function () {
   console.log('Converted to Dracosis');
 });

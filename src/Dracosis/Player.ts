@@ -44,14 +44,14 @@ import CortoDecoder from './corto/cortodecoder.js'
 // Class draco / basis player
 export default class DracosisPlayer {
   // Public Fields
-  public frameRate = 5;
+  public frameRate = 2;
   public speed = 1.0; // Multiplied by framerate for final playback output rate
 
   // Three objects
   public scene: Scene;
   public renderer: Renderer;
   public mesh: Mesh;
-  public material: MeshBasicMaterial;
+  public material: any;
   public bufferGeometry: BufferGeometry;
   public compressedTexture: CompressedTexture;
   public dracoLoader = new DRACOLoader();
@@ -60,7 +60,7 @@ export default class DracosisPlayer {
   private _startFrame = 1;
   private _endFrame = 0;
   private _numberOfFrames = 0;
-  private _bufferSize = 100;
+  private _bufferSize = 99;
   private _currentFrame = 1;
   private _loop = true;
   private _playOnStart = true;
@@ -142,7 +142,7 @@ export default class DracosisPlayer {
     startFrame = 1,
     endFrame = -1,
     speedMultiplier = 1,
-    bufferSize = 100,
+    bufferSize = 99,
     serverUrl
   }) {
     this.scene = scene;
@@ -156,25 +156,29 @@ export default class DracosisPlayer {
     this._bufferSize = bufferSize;
 
     this.bufferGeometry = new BoxBufferGeometry(1, 1, 1);
-    this.material = new MeshBasicMaterial();
+    // this.material = new MeshBasicMaterial();
     // this is to debug UVs
-    // this.material = new ShaderMaterial({
-    //   uniforms: {
-    //   },
-    //   // wireframe: true,
-    //   // transparent: true,
-    //   vertexShader: `
-    //   varying vec2 vUv;
-    //   void main() {
-    //     vUv = uv;
-    //     gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
-    //   }`,
-    //   fragmentShader: `
-    //   varying vec2 vUv;
-    //   void main()  {
-    //     gl_FragColor = vec4(vUv,0.0,1.);
-    //   }`
-    // });
+    //@ts-ignore
+    this.material = new ShaderMaterial({
+      uniforms: {
+        map: { value: null},
+      },
+      // wireframe: true,
+      // transparent: true,
+      vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+      }`,
+      fragmentShader: `
+      varying vec2 vUv;
+      uniform sampler2D map;
+      void main()  {
+        gl_FragColor = vec4(vUv,0.0,1.);
+        gl_FragColor = texture2D(map,vUv);
+      }`
+    });
     this.mesh = new Mesh(this.bufferGeometry, this.material);
     this.scene.add(this.mesh);
 
@@ -426,17 +430,31 @@ export default class DracosisPlayer {
 
   async decodeTexture(compressedTexture, frameNumber) {
     var decodedTexture;
+
+    // debug decoded image
+    console.log(compressedTexture, 'in decodeTexture compressedTexture');
+    let blob = new Blob([compressedTexture]);
+    let link = document.createElement('a');
+    link.href = window.URL.createObjectURL(blob);
+    let fileName = 'imageTexture.basis';
+    link.download = fileName;
+    link.click()
+    let that = this;
+
     await this._basisTextureLoader
       //@ts-ignore
       ._createTexture(compressedTexture, frameNumber.toString())
       .then(function (texture, param) {
-        texture.magFilter = NearestFilter;
-        texture.minFilter = NearestFilter;
-        texture.encoding = sRGBEncoding;
-        texture.wrapS = RepeatWrapping;
-        texture.wrapT = RepeatWrapping;
-        texture.repeat.y = -1;
+        // texture.magFilter = NearestFilter;
+        // texture.minFilter = NearestFilter;
+        // texture.encoding = sRGBEncoding;
+        // texture.wrapS = RepeatWrapping;
+        // texture.wrapT = RepeatWrapping;
+        // texture.repeat.y = -1;
         decodedTexture = texture;
+        // debug random texture here
+        decodedTexture = new TextureLoader().load('https://images.unsplash.com/photo-1599687350404-88b32c067289?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=crop&w=800&q=60');
+        console.log('succesfully decoded texture');
       })
       .catch(function (error) {
         console.log('Error:', error);
@@ -484,11 +502,12 @@ export default class DracosisPlayer {
 
       player._ringBuffer.get(
         player._pos
-      ).bufferGeometry = player.decodeCORTOData(geomTex.bufferGeometry);
+      ).bufferGeometry = player.decodeDracoData(geomTex.bufferGeometry);
 
       player
         .decodeTexture(geomTex.compressedTexture, geomTex.frameNumber)
         .then(({ texture, frameNumber }) => {
+          console.log(texture,'texture');
           var pos = player.getPositionInBuffer(frameNumber);
           player._ringBuffer.get(pos).compressedTexture = texture;
           if (!player._isPlaying && count < this._bufferSize) count++;
@@ -584,7 +603,7 @@ export default class DracosisPlayer {
     // Every 2 second, make sure our workers are working
     setTimeout(function () {
       player.handleBuffers(player);
-    }, 2000);
+    }, 16.6*4);
   }
 
   update() {
@@ -624,9 +643,11 @@ export default class DracosisPlayer {
       this.compressedTexture = this._ringBuffer.getFirst().compressedTexture;
       // this.compressedTexture = this._ringBuffer.get(this._currentFrame).compressedTexture
       // @ts-ignore
-      this.mesh.material.map = this.compressedTexture;
+      // this.mesh.material.map = this.compressedTexture;
+      this.mesh.material.uniforms.map.value = this.compressedTexture;
       // @ts-ignore
       this.mesh.material.needsUpdate = true;
+      (this.mesh.material as any).uniforms.map.needsUpdate = true;
 
       // console.log(
       //   'Recalled the frame ' + this._ringBuffer.getFirst().frameNumber
