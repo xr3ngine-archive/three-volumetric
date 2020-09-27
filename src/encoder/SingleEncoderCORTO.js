@@ -253,6 +253,9 @@ var DracoFileCreator = /** @class */ (function () {
 // for file in *.ply
 // ../corto $file
 // end
-new DracoFileCreator('crt', 'png', 0, 99, 'CRT_fromPLY_sample_v35_99frames.drcs', function () {
+// for file in  /Users/akella/Desktop/yogamesh/*.obj
+//     ./meshlabserver  -i "$file" -o "$file.ply" -m wt # -om vc
+// end
+new DracoFileCreator('crt', 'png', 0, 299, 'CRT_fromPLY-meshlab2_sample_v35_299frames.drcs', function () {
   console.log('Converted to Dracosis');
 });
